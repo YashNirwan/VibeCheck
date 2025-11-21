@@ -17,40 +17,123 @@ except:
 if 'memory' not in st.session_state:
     st.session_state.memory = []
 
-# --- UI STYLING (Restored Original CSS + Added Form Support) ---
+# --- UI STYLING (THE UPGRADE) ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
     
-    .stApp { background-color: #0E1117; color: white; }
+    /* GLOBAL THEME */
+    .stApp { background-color: #0E1117; color: white; font-family: 'Inter', sans-serif; }
     
+    /* HEADER STYLING */
     h1 {
-        font-family: 'Inter', sans-serif;
         font-weight: 800;
-        letter-spacing: -1px;
-        font-size: 3.5rem !important;
-        background: -webkit-linear-gradient(#eee, #999);
+        letter-spacing: -2px;
+        font-size: 4rem !important;
+        background: linear-gradient(to right, #ffffff, #888888);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        padding-bottom: 20px;
+        margin-bottom: 0px;
     }
     
-    .stTextInput > div > div > input { background-color: #1E1E2E; color: #00FFAA; border-radius: 8px; border: 1px solid #333; }
+    /* INPUT FORM STYLING */
+    .stTextInput > div > div > input { 
+        background-color: #161B22; 
+        color: #E6EDF3; 
+        border-radius: 12px; 
+        border: 1px solid #30363D; 
+        padding: 12px;
+    }
+    .stTextInput > div > div > input:focus {
+        border-color: #2575fc;
+        box-shadow: 0 0 10px rgba(37, 117, 252, 0.2);
+    }
     
-    /* TARGETS BOTH STANDARD BUTTONS AND FORM SUBMIT BUTTONS TO MATCH ORIGINAL LOOK */
+    /* BUTTON STYLING */
     .stButton > button, div[data-testid="stFormSubmitButton"] > button {
         background: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%);
-        color: white; border: none; padding: 15px; font-weight: bold; border-radius: 8px; width: 100%;
+        color: white; border: none; padding: 16px; font-weight: 700; border-radius: 12px; width: 100%;
         font-size: 1.1em; letter-spacing: 1px;
+        transition: transform 0.1s ease, box-shadow 0.2s ease;
+    }
+    .stButton > button:hover, div[data-testid="stFormSubmitButton"] > button:hover {
+        transform: scale(1.02);
+        box-shadow: 0 5px 15px rgba(37, 117, 252, 0.4);
+    }
+
+    /* CUSTOM MUSIC CARD (Spotify Style) */
+    .music-card {
+        background-color: #161B22;
+        border: 1px solid #30363D;
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 20px;
+        transition: all 0.3s ease;
+        height: 100%; /* Ensures equal height in grid */
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+    }
+    .music-card:hover {
+        transform: translateY(-5px);
+        border-color: #2575fc;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .card-img {
+        width: 100%;
+        aspect-ratio: 1/1;
+        object-fit: cover;
+        border-radius: 8px;
+        margin-bottom: 12px;
+    }
+    .card-title {
+        font-weight: 700;
+        font-size: 1.1em;
+        color: #fff;
+        margin-bottom: 4px;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .card-artist {
+        font-size: 0.9em;
+        color: #8b949e;
+        margin-bottom: 8px;
+    }
+    .card-link {
+        text-decoration: none;
+        color: inherit;
+        display: block;
     }
     
-    .track-card { background: #161B22; padding: 10px; border-radius: 10px; margin-bottom: 10px; }
-    .vision-box { border-left: 4px solid #2575fc; padding: 20px; background: #161B22; border-radius: 0 10px 10px 0; }
-    .utility-box { background: #1E1E2E; padding: 15px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #333; }
+    /* UTILITY BOXES */
+    .vision-box { border-left: 4px solid #2575fc; padding: 20px; background: #12151C; border-radius: 0 12px 12px 0; font-size: 1.05em; line-height: 1.6; }
+    .utility-box { background: #161B22; padding: 15px; border-radius: 12px; margin-bottom: 15px; border: 1px solid #30363D; }
+    
+    /* PLAY ALL BUTTON */
+    .play-all-btn {
+        background: #238636;
+        color: white;
+        width: 100%;
+        padding: 18px;
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+        font-size: 1.3em;
+        font-weight: 800;
+        text-align: center;
+        text-decoration: none;
+        display: block;
+        box-shadow: 0 4px 15px rgba(35, 134, 54, 0.4);
+        transition: transform 0.2s;
+    }
+    .play-all-btn:hover { transform: scale(1.02); background: #2ea043; }
+
 </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR: HARD UTILITY (Restored Original Content) ---
+# --- SIDEBAR (Original Content) ---
 with st.sidebar:
     st.markdown("### System Capabilities")
     
@@ -75,7 +158,7 @@ with st.sidebar:
 st.markdown("<h1>VibeCheck</h1>", unsafe_allow_html=True)
 st.write("Generate intelligent, cross-era soundtracks with API validation and auto-queuing.")
 
-# --- PRO HINTS MODULE (Restored Original Content) ---
+# --- PRO HINTS MODULE (Original Content) ---
 with st.expander("💡 PRO TIP: How to describe complex scenes"):
     st.markdown("""
     * **Length is good:** Feel free to paste a full paragraph. The AI loves detail about lighting, weather, and character emotion.
@@ -83,7 +166,7 @@ with st.expander("💡 PRO TIP: How to describe complex scenes"):
     * **Specifics matter:** *"Flickering neon lights in rain"* pulls different songs than just *"Cyberpunk City."*
     """)
 
-# --- INPUT SECTION (Wrapped in Form for Enter Key Support) ---
+# --- INPUT SECTION ---
 with st.form(key='my_form', clear_on_submit=False):
     col_in, col_opt = st.columns([3, 1])
     with col_in:
@@ -96,10 +179,9 @@ with st.form(key='my_form', clear_on_submit=False):
         reading_mode = st.toggle("📖 Reading Mode", value=False, help="Forces Instrumental/Ambient music only (No Lyrics).")
         num_songs = st.slider("Tracks", 3, 40, 12)
         
-    # This renders with the same CSS gradient as the original button
     submit_button = st.form_submit_button(label="ACTION: CURATE MIX")
 
-# --- APP LOGIC (Hidden Brain: Includes Master Tone + VIP Tier Logic) ---
+# --- APP LOGIC ---
 if submit_button:
     if not user_input:
         st.warning("Please provide a scene or book title.")
@@ -112,7 +194,7 @@ if submit_button:
         
         with st.spinner("Synthesizing eras & validating IDs..."):
             try:
-                # REVISED PROMPT: Uses the "Master Tone" and "VIP" instructions
+                # --- PROMPT LOGIC ---
                 prompt = f"""
                 Act as a Cinema Music Supervisor.
                 INPUT: "{user_input}"
@@ -151,7 +233,7 @@ if submit_button:
                 cols = st.columns(4) 
                 
                 for idx, q in enumerate(data.get('search_queries', [])):
-                    # LOGIC: Broad Search -> Filter for VIP (Songs) or Popular Videos (1K+ Views)
+                    # --- SEARCH LOGIC ---
                     res = yt.search(q)
                     match = None
                     
@@ -178,19 +260,27 @@ if submit_button:
                         if match:
                             title = match['title']
                             artist = match['artists'][0]['name'] if match.get('artists') else "Unknown"
-                            thumb = match['thumbnails'][-1]['url'] if match.get('thumbnails') else "https://via.placeholder.com/150"
+                            thumb = match['thumbnails'][-1]['url'] if match.get('thumbnails') else "https://via.placeholder.com/300"
                             video_ids.append(match['videoId'])
                             
+                            # --- UI UPGRADE: CUSTOM HTML CARD ---
+                            # Instead of st.image/st.write, we render a pure HTML card.
+                            # This ensures perfect alignment and makes the whole card clickable.
                             with cols[idx % 4]:
-                                st.image(thumb, use_container_width=True)
-                                st.markdown(f"**{title}**")
-                                st.caption(artist)
-                                st.markdown(f"[▶ Listen](https://music.youtube.com/watch?v={match['videoId']})")
-                                st.write("---")
+                                st.markdown(f"""
+                                <a href="https://music.youtube.com/watch?v={match['videoId']}" target="_blank" class="card-link">
+                                    <div class="music-card">
+                                        <img src="{thumb}" class="card-img">
+                                        <div class="card-title" title="{title}">{title}</div>
+                                        <div class="card-artist">{artist}</div>
+                                    </div>
+                                </a>
+                                """, unsafe_allow_html=True)
 
                 if video_ids:
                     url = f"http://www.youtube.com/watch_videos?video_ids={','.join(video_ids)}"
-                    st.markdown(f'<a href="{url}" target="_blank"><button style="background:#2575fc;color:white;width:100%;padding:15px;border:none;border-radius:10px;cursor:pointer;font-size:1.2em;">🚀 PLAY FULL SMART MIX</button></a>', unsafe_allow_html=True)
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.markdown(f'<a href="{url}" target="_blank" class="play-all-btn">🚀 PLAY FULL SMART MIX ({len(video_ids)} Tracks)</a>', unsafe_allow_html=True)
 
             except Exception as e:
                 st.error(f"Error: {e}")
