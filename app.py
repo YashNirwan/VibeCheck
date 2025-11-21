@@ -41,7 +41,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR ---
+# --- SIDEBAR (RESTORED CONTENT) ---
 with st.sidebar:
     st.markdown("### System Capabilities")
     st.markdown("""
@@ -53,15 +53,21 @@ with st.sidebar:
     <b>2. The "VIP Entrance"</b><br>
     <small>Official Songs (YT Music exclusives) get VIP entry. User videos must prove popularity (1K+ views) to enter.</small>
     </div>
+    <div class='utility-box'>
+    <b>3. Master Tone Guard</b><br>
+    <small>Ensuring a consistent emotional world across all tracks.</small>
+    </div>
     """, unsafe_allow_html=True)
 
 # --- MAIN APP ---
 st.markdown("<h1>VibeCheck</h1>", unsafe_allow_html=True)
 
+# --- PRO HINTS (RESTORED CONTENT) ---
 with st.expander("💡 PRO TIP: How to describe complex scenes"):
     st.markdown("""
     * **Length is good:** Paste full paragraphs for better atmospheric matching.
     * **Contrast helps:** Try mixing opposing vibes like "Sad Classical" with "Aggressive Industrial."
+    * **Visuals matter:** Mentioning colors or lighting helps the AI pick the right "texture."
     """)
 
 # --- INPUT SECTION ---
@@ -70,7 +76,7 @@ with st.form(key='my_form', clear_on_submit=False):
     with col_in:
         user_input = st.text_input("Book Title or Scene Description:", placeholder="e.g. 'The Age of Reason' by Sartre")
     with col_opt:
-        reading_mode = st.toggle("📖 Reading Mode", value=False)
+        reading_mode = st.toggle("📖 Reading Mode", value=False, help="Forces Instrumental/Ambient music only (No Lyrics).")
         num_songs = st.slider("Tracks", 3, 40, 12)
     submit_button = st.form_submit_button(label="ACTION: CURATE MIX")
 
@@ -129,17 +135,24 @@ if submit_button:
                         # We scan the top 5 results to find the best version.
                         
                         for r in res[:5]:
+                            # DURATION CHECK (Universal Rule):
+                            # Skip if track is < 60 seconds (filters out skits/intros/ringtone uploads)
+                            duration = r.get('duration_seconds', 0)
+                            if not duration and 'duration' in r: 
+                                pass # fallback for string parsing if needed
+                            
+                            if duration and duration < 60:
+                                continue # Skip short tracks
+                            
                             # RULE 1: OFFICIAL SONGS (The VIPs)
-                            # If it's a 'song' (YT Music Exclusive), we trust it regardless of views.
                             if r['resultType'] == 'song':
                                 match = r
                                 break
                                 
                             # RULE 2: USER VIDEOS (The Crowd)
-                            # If it's a 'video', it must show ID (View Count).
                             if r['resultType'] == 'video':
                                 views = r.get('views', '')
-                                # Must have K (Thousands), M (Millions), or B (Billions)
+                                # Must have K, M, or B views
                                 if 'K' in views or 'M' in views or 'B' in views:
                                     match = r
                                     break
