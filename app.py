@@ -6,15 +6,13 @@ import json
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="VibeCheck", page_icon="🎬", layout="wide")
 
-# --- 🔐 SECURITY: GET KEY FROM CLOUD SECRETS ---
+# --- 🔐 SECURITY ---
 try:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 except:
-    st.warning("⚠️ Using insecure fallback key. Set up Streamlit Secrets for production!")
-    # fallback for local testing only
+    st.warning("⚠️ Using insecure fallback key.")
     GROQ_API_KEY = "gsk_..." 
 
-# Initialize Memory
 if 'memory' not in st.session_state:
     st.session_state.memory = []
 
@@ -33,87 +31,61 @@ st.markdown("""
         padding-bottom: 20px;
     }
     .stTextInput > div > div > input { background-color: #1E1E2E; color: #00FFAA; border-radius: 8px; border: 1px solid #333; }
-    
-    /* FORM BUTTON STYLING */
     div[data-testid="stFormSubmitButton"] > button {
         background: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%);
         color: white; border: none; padding: 15px; font-weight: bold; border-radius: 8px; width: 100%;
         font-size: 1.1em; letter-spacing: 1px;
     }
-    
-    .track-card { background: #161B22; padding: 10px; border-radius: 10px; margin-bottom: 10px; }
     .vision-box { border-left: 4px solid #2575fc; padding: 20px; background: #161B22; border-radius: 0 10px 10px 0; }
     .utility-box { background: #1E1E2E; padding: 15px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #333; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR: HARD UTILITY ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.markdown("### System Capabilities")
-    
     st.markdown("""
     <div class='utility-box'>
-    <b>1. The Truth Filter (API)</b><br>
-    <small>Chatbots hallucinate songs. We ping the YouTube Music API to verify every track exists and is playable before showing it to you.</small>
+    <b>1. The Truth Filter</b><br>
+    <small>Verifying tracks against the database to ensure zero hallucinations.</small>
     </div>
-    
     <div class='utility-box'>
-    <b>2. Zero-Friction Queue</b><br>
-    <small>Don't copy-paste 10 times. We aggregate Video IDs into a single "Play All" link. 10 minutes of manual work becomes 1 click.</small>
-    </div>
-
-    <div class='utility-box'>
-    <b>3. Visual Data Sorting</b><br>
-    <small>Text is slow. Use Album Art to instantly distinguish between a "1930s Original" (grainy cover) and a "2024 Cover" (digital art).</small>
+    <b>2. The "VIP Entrance"</b><br>
+    <small>Official Songs (YT Music exclusives) get VIP entry. User videos must prove popularity (1K+ views) to enter.</small>
     </div>
     """, unsafe_allow_html=True)
 
 # --- MAIN APP ---
 st.markdown("<h1>VibeCheck</h1>", unsafe_allow_html=True)
-st.write("Generate intelligent, cross-era soundtracks with API validation and auto-queuing.")
 
-# --- 💡 PRO HINTS MODULE ---
 with st.expander("💡 PRO TIP: How to describe complex scenes"):
     st.markdown("""
-    * **Length is good:** Feel free to paste a full paragraph. The AI loves detail about lighting, weather, and character emotion.
-    * **Contrast helps:** phrases like *"A violent fight scene with peaceful classical music"* give very specific results.
-    * **Specifics matter:** *"Flickering neon lights in rain"* pulls different songs than just *"Cyberpunk City."*
+    * **Length is good:** Paste full paragraphs for better atmospheric matching.
+    * **Contrast helps:** Try mixing opposing vibes like "Sad Classical" with "Aggressive Industrial."
     """)
 
-# --- INPUT SECTION (NOW INSIDE A FORM) ---
-with st.form(key='my_form'):
+# --- INPUT SECTION ---
+with st.form(key='my_form', clear_on_submit=False):
     col_in, col_opt = st.columns([3, 1])
     with col_in:
-        user_input = st.text_input(
-            "Book Title or Scene Description:", 
-            placeholder="e.g. 'The Age of Reason' by Sartre —OR— 'A tense dinner party that turns into a fist fight'"
-        )
-
+        user_input = st.text_input("Book Title or Scene Description:", placeholder="e.g. 'The Age of Reason' by Sartre")
     with col_opt:
-        reading_mode = st.toggle("📖 Reading Mode", value=False, help="Forces Instrumental/Ambient music only (No Lyrics).")
+        reading_mode = st.toggle("📖 Reading Mode", value=False)
         num_songs = st.slider("Tracks", 3, 40, 12)
-        
-    # This button now triggers when you press ENTER in the text box
     submit_button = st.form_submit_button(label="ACTION: CURATE MIX")
 
-# --- APP LOGIC (TRIGGERED BY FORM SUBMIT) ---
+# --- APP LOGIC ---
 if submit_button:
     if not user_input:
         st.warning("Please provide a scene or book title.")
     else:
-        if not GROQ_API_KEY or GROQ_API_KEY == "gsk_...":
-             st.error("🚨 Missing API Key! Check Streamlit Secrets.")
-             st.stop()
-             
         client = Groq(api_key=GROQ_API_KEY)
         yt = YTMusic()
-        
-        music_type = "INSTRUMENTAL / AMBIENT / SCORE ONLY (NO LYRICS)" if reading_mode else "ANY (Lyrics allowed if thematic)"
+        music_type = "INSTRUMENTAL / AMBIENT / SCORE ONLY" if reading_mode else "ANY"
         lessons = "\n".join([f"- {l}" for l in st.session_state.memory])
         
-        with st.spinner("Synthesizing eras & validating IDs..."):
+        with st.spinner("Synthesizing eras & validating quality..."):
             try:
-                # --- UPDATED "MASTER TONE" LOGIC ---
                 prompt = f"""
                 Act as a Cinema Music Supervisor.
                 INPUT: "{user_input}"
@@ -121,22 +93,15 @@ if submit_button:
                 COUNT: {num_songs} tracks.
                 HISTORY: {lessons}
 
-                THE "MASTER TONE" RULE (CRITICAL):
-                1. IDENTIFY THE WORLD'S PHYSICS: Before picking songs, decide the "Master Tone" of the book/author.
-                   - Example: Sally Rooney = Intimate, Raw, Quiet, Intellectual.
-                   - Example: Stephen King = Tense, Dread, Americana.
-                2. ENFORCE CONSISTENCY: Every song must exist INSIDE that Master Tone.
-                   - If the Master Tone is "Intimate/Quiet", do NOT pick loud/aggressive tracks even if the lyrics match.
-                   - A "fight scene" in a quiet book should sound like a Tense String Quartet, not Heavy Metal.
-                3. DIVERSITY WITHIN CONSTRAINT:
-                   - You MUST still mix eras (1920s to 2024).
-                   - Diversity comes from TIME (Old vs New) and TEXTURE (Acoustic vs Electronic), NOT by breaking the emotional reality.
+                CURATION PHILOSOPHY:
+                - Mix "Hidden Gems" (underground but professional) with established classics.
+                - DO NOT violate the Master Tone (the overarching mood of the author/scene).
 
                 Output JSON:
                 {{
-                  "vision": "Define the 'Master Tone' you identified. Explain how you kept diversity without breaking that tone.",
+                  "vision": "Define the Master Tone and why these tracks fit this specific world.",
                   "search_queries": ["Artist - Song Title"],
-                  "lesson": "One rule about this specific author's vibe."
+                  "lesson": "One insight about this vibe."
                 }}
                 """
                 
@@ -146,9 +111,7 @@ if submit_button:
                     response_format={"type": "json_object"}
                 )
                 data = json.loads(completion.choices[0].message.content)
-                
-                if "lesson" in data:
-                    st.session_state.memory.append(data["lesson"])
+                if "lesson" in data: st.session_state.memory.append(data["lesson"])
 
                 st.markdown(f"### 👁️ Director's Vision")
                 st.markdown(f"<div class='vision-box'>{data.get('vision')}</div>", unsafe_allow_html=True)
@@ -158,20 +121,42 @@ if submit_button:
                 cols = st.columns(4) 
                 
                 for idx, q in enumerate(data.get('search_queries', [])):
-                    res = yt.search(q, filter="songs")
+                    res = yt.search(q)
+                    match = None
+                    
                     if res:
-                        track = res[0]
-                        title = track['title']
-                        artist = track['artists'][0]['name']
-                        thumb = track['thumbnails'][-1]['url'] if track['thumbnails'] else "https://via.placeholder.com/150"
-                        video_ids.append(track['videoId'])
+                        # --- THE VIP FILTER SYSTEM ---
+                        # We scan the top 5 results to find the best version.
                         
-                        with cols[idx % 4]:
-                            st.image(thumb, use_container_width=True)
-                            st.markdown(f"**{title}**")
-                            st.caption(artist)
-                            st.markdown(f"[▶ Listen](https://music.youtube.com/watch?v={track['videoId']})")
-                            st.write("---")
+                        for r in res[:5]:
+                            # RULE 1: OFFICIAL SONGS (The VIPs)
+                            # If it's a 'song' (YT Music Exclusive), we trust it regardless of views.
+                            if r['resultType'] == 'song':
+                                match = r
+                                break
+                                
+                            # RULE 2: USER VIDEOS (The Crowd)
+                            # If it's a 'video', it must show ID (View Count).
+                            if r['resultType'] == 'video':
+                                views = r.get('views', '')
+                                # Must have K (Thousands), M (Millions), or B (Billions)
+                                if 'K' in views or 'M' in views or 'B' in views:
+                                    match = r
+                                    break
+                        
+                        # Final Check: Did we find a valid track?
+                        if match:
+                            title = match['title']
+                            artist = match['artists'][0]['name'] if match.get('artists') else "Unknown"
+                            thumb = match['thumbnails'][-1]['url'] if match.get('thumbnails') else ""
+                            video_ids.append(match['videoId'])
+                            
+                            with cols[idx % 4]:
+                                if thumb: st.image(thumb, use_container_width=True)
+                                st.markdown(f"**{title}**")
+                                st.caption(artist)
+                                st.markdown(f"[▶ Listen](https://music.youtube.com/watch?v={match['videoId']})")
+                                st.write("---")
 
                 if video_ids:
                     url = f"http://www.youtube.com/watch_videos?video_ids={','.join(video_ids)}"
