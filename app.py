@@ -7,35 +7,31 @@ import json
 st.set_page_config(page_title="VibeCheck", page_icon="🎬", layout="wide")
 
 # --- 🔐 SECURITY: GET KEY FROM CLOUD SECRETS ---
-# We use st.secrets so we don't expose the key in the code
 try:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 except:
-    st.error("🚨 API Key not found! Please set it in Streamlit Secrets.")
-    st.stop()
+    st.warning("⚠️ Using insecure fallback key. Set up Streamlit Secrets for production!")
+    # fallback for local testing only
+    GROQ_API_KEY = "gsk_..." 
 
 # Initialize Memory
 if 'memory' not in st.session_state:
     st.session_state.memory = []
 
-# --- UI STYLING (Minimalist Font) ---
+# --- UI STYLING ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;800&display=swap');
-    
     .stApp { background-color: #0E1117; color: white; }
-    
     h1 {
         font-family: 'Inter', sans-serif;
         font-weight: 800;
-        letter-spacing: -1px;
         font-size: 3.5rem !important;
         background: -webkit-linear-gradient(#eee, #999);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         padding-bottom: 20px;
     }
-    
     .stTextInput > div > div > input { background-color: #1E1E2E; color: #00FFAA; border-radius: 8px; border: 1px solid #333; }
     .stButton > button {
         background: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%);
@@ -97,38 +93,42 @@ if st.button("ACTION: CURATE MIX"):
     if not user_input:
         st.warning("Please provide a scene or book title.")
     else:
+        if not GROQ_API_KEY or GROQ_API_KEY == "gsk_...":
+             st.error("🚨 Missing API Key! Check Streamlit Secrets.")
+             st.stop()
+             
         client = Groq(api_key=GROQ_API_KEY)
         yt = YTMusic()
         
-        # Memory String
-        lessons = "\n".join([f"- {l}" for l in st.session_state.memory])
-        
         music_type = "INSTRUMENTAL / AMBIENT / SCORE ONLY (NO LYRICS)" if reading_mode else "ANY (Lyrics allowed if thematic)"
+        lessons = "\n".join([f"- {l}" for l in st.session_state.memory])
         
         with st.spinner("Synthesizing eras & validating IDs..."):
             try:
+                # --- UPDATED "MASTER TONE" LOGIC ---
                 prompt = f"""
-                Act as a Cinema Music Supervisor known for "anachronistic but perfect" choices.
+                Act as a Cinema Music Supervisor.
                 INPUT: "{user_input}"
                 MODE: {music_type}
                 COUNT: {num_songs} tracks.
                 HISTORY: {lessons}
 
-                THE RULES OF THE MIX:
-                1. PRIORITY = EMOTIONAL TRUTH. Does it *feel* right?
-                2. THE "SMART PLATTER": You MUST provide a mix of eras. 
-                   - If it's an old book (Sartre), do NOT just give 1930s music.
-                   - Include 1-2 period accurate tracks (to ground it).
-                   - Include modern tracks that share the *philosophy* (e.g., Radiohead or Max Richter for existentialism).
-                   - Include "Bridge" tracks (Dark Ambient, Jazz Noir).
-                3. READING MODE CHECK: If mode is Instrumental, ensure you still mix Classical with Modern Ambient/Drone.
-                4. Return exactly {num_songs} tracks.
+                THE "MASTER TONE" RULE (CRITICAL):
+                1. IDENTIFY THE WORLD'S PHYSICS: Before picking songs, decide the "Master Tone" of the book/author.
+                   - Example: Sally Rooney = Intimate, Raw, Quiet, Intellectual.
+                   - Example: Stephen King = Tense, Dread, Americana.
+                2. ENFORCE CONSISTENCY: Every song must exist INSIDE that Master Tone.
+                   - If the Master Tone is "Intimate/Quiet", do NOT pick loud/aggressive tracks even if the lyrics match.
+                   - A "fight scene" in a quiet book should sound like a Tense String Quartet, not Heavy Metal.
+                3. DIVERSITY WITHIN CONSTRAINT:
+                   - You MUST still mix eras (1920s to 2024).
+                   - Diversity comes from TIME (Old vs New) and TEXTURE (Acoustic vs Electronic), NOT by breaking the emotional reality.
 
                 Output JSON:
                 {{
-                  "vision": "Explain why you mixed these specific eras. What connects the 1930s track to the 2024 track?",
+                  "vision": "Define the 'Master Tone' you identified. Explain how you kept diversity without breaking that tone.",
                   "search_queries": ["Artist - Song Title"],
-                  "lesson": "One takeaway about this specific vibe."
+                  "lesson": "One rule about this specific author's vibe."
                 }}
                 """
                 
