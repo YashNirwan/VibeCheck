@@ -33,11 +33,14 @@ st.markdown("""
         padding-bottom: 20px;
     }
     .stTextInput > div > div > input { background-color: #1E1E2E; color: #00FFAA; border-radius: 8px; border: 1px solid #333; }
-    .stButton > button {
+    
+    /* FORM BUTTON STYLING */
+    div[data-testid="stFormSubmitButton"] > button {
         background: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%);
         color: white; border: none; padding: 15px; font-weight: bold; border-radius: 8px; width: 100%;
         font-size: 1.1em; letter-spacing: 1px;
     }
+    
     .track-card { background: #161B22; padding: 10px; border-radius: 10px; margin-bottom: 10px; }
     .vision-box { border-left: 4px solid #2575fc; padding: 20px; background: #161B22; border-radius: 0 10px 10px 0; }
     .utility-box { background: #1E1E2E; padding: 15px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #333; }
@@ -69,18 +72,6 @@ with st.sidebar:
 st.markdown("<h1>VibeCheck</h1>", unsafe_allow_html=True)
 st.write("Generate intelligent, cross-era soundtracks with API validation and auto-queuing.")
 
-# --- INPUT SECTION ---
-col_in, col_opt = st.columns([3, 1])
-with col_in:
-    user_input = st.text_input(
-        "Book Title or Scene Description:", 
-        placeholder="e.g. 'The Age of Reason' by Sartre —OR— 'A tense dinner party that turns into a fist fight'"
-    )
-
-with col_opt:
-    reading_mode = st.toggle("📖 Reading Mode", value=False, help="Forces Instrumental/Ambient music only (No Lyrics).")
-    num_songs = st.slider("Tracks", 3, 40, 12)
-
 # --- 💡 PRO HINTS MODULE ---
 with st.expander("💡 PRO TIP: How to describe complex scenes"):
     st.markdown("""
@@ -89,7 +80,24 @@ with st.expander("💡 PRO TIP: How to describe complex scenes"):
     * **Specifics matter:** *"Flickering neon lights in rain"* pulls different songs than just *"Cyberpunk City."*
     """)
 
-if st.button("ACTION: CURATE MIX"):
+# --- INPUT SECTION (NOW INSIDE A FORM) ---
+with st.form(key='my_form'):
+    col_in, col_opt = st.columns([3, 1])
+    with col_in:
+        user_input = st.text_input(
+            "Book Title or Scene Description:", 
+            placeholder="e.g. 'The Age of Reason' by Sartre —OR— 'A tense dinner party that turns into a fist fight'"
+        )
+
+    with col_opt:
+        reading_mode = st.toggle("📖 Reading Mode", value=False, help="Forces Instrumental/Ambient music only (No Lyrics).")
+        num_songs = st.slider("Tracks", 3, 40, 12)
+        
+    # This button now triggers when you press ENTER in the text box
+    submit_button = st.form_submit_button(label="ACTION: CURATE MIX")
+
+# --- APP LOGIC (TRIGGERED BY FORM SUBMIT) ---
+if submit_button:
     if not user_input:
         st.warning("Please provide a scene or book title.")
     else:
