@@ -86,16 +86,16 @@ div[data-testid="stTextInput"] label,
 div[data-testid="stSlider"] label,
 div[data-testid="stToggle"] label { color: #666 !important; font-size: 0.78rem !important; }
 
-.stButton > button {
+.stButton > button[kind="primary"] {
     background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
     color: white !important; border: none !important;
     font-weight: 700 !important; border-radius: 10px !important;
     letter-spacing: 1.2px !important; transition: opacity 0.2s !important;
 }
-.stButton > button:hover { opacity: 0.82 !important; }
+.stButton > button[kind="primary"]:hover { opacity: 0.82 !important; }
 .stButton > button[kind="secondary"] {
     background: #10121A !important; border: 1px solid #1E2130 !important;
-    color: #666 !important; font-weight: 500 !important; letter-spacing: 0.4px !important;
+    color: #888 !important; font-weight: 500 !important; letter-spacing: 0.4px !important;
 }
 .stButton > button[kind="secondary"]:hover { border-color: #6366f1 !important; color: #DDE1EE !important; }
 
@@ -321,7 +321,7 @@ with st.expander("Pro tips"):
 
 btn_col1, btn_col2 = st.columns([2, 1])
 with btn_col1:
-    generate = st.button("CURATE MIX", use_container_width=True)
+    generate = st.button("CURATE MIX", use_container_width=True, type="primary")
 with btn_col2:
     tweak = st.button(
         "TWEAK MIX", use_container_width=True,
