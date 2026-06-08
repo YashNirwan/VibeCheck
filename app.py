@@ -2,285 +2,535 @@ import streamlit as st
 from groq import Groq
 from ytmusicapi import YTMusic
 import json
+import html
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from difflib import SequenceMatcher
 
-# --- PAGE CONFIG ---
+# ── CONFIG ────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="VibeCheck", page_icon="🎬", layout="wide")
 
-# --- 🔐 SECURITY ---
 try:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-except:
-    st.error("🚨 API Key not found! Please set it in Streamlit Secrets.")
+except Exception:
+    st.error("🚨 GROQ_API_KEY not found. Set it in Streamlit Secrets.")
     st.stop()
 
-# Initialize Memory
-if 'memory' not in st.session_state:
-    st.session_state.memory = []
+MAX_MEMORY      = 5
+MATCH_THRESHOLD = 0.40
+MAX_WORKERS     = 10
+MAX_INPUT_LEN   = 800
 
-# --- UI STYLING (THE UPGRADE) ---
+EXAMPLE_PROMPTS = [
+    "The Road by Cormac McCarthy",
+    "A heist going wrong at 3am",
+    "Blade Runner 2049 — rain on neon streets",
+    "Falling in love in a foreign city",
+    "The last day of summer, 1994",
+]
+
+# ── CACHED RESOURCES ──────────────────────────────────────────────────────────
+@st.cache_resource
+def get_ytmusic():
+    return YTMusic()
+
+@st.cache_resource
+def get_groq_client():
+    return Groq(api_key=GROQ_API_KEY)
+
+# ── SESSION STATE ─────────────────────────────────────────────────────────────
+_defaults = {
+    "memory":         [],
+    "track_feedback": {},
+    "current_tracks": [],
+    "current_vision": "",
+    "skipped_tracks": [],
+    "input_text":     "",
+}
+for _k, _v in _defaults.items():
+    if _k not in st.session_state:
+        st.session_state[_k] = _v
+
+# ── STYLING ───────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
-    
-    /* GLOBAL THEME */
-    .stApp { background-color: #0E1117; color: white; font-family: 'Inter', sans-serif; }
-    
-    /* HEADER STYLING */
-    h1 {
-        font-weight: 800;
-        letter-spacing: -2px;
-        font-size: 4rem !important;
-        background: linear-gradient(to right, #ffffff, #888888);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0px;
-    }
-    
-    /* INPUT FORM STYLING */
-    .stTextInput > div > div > input { 
-        background-color: #161B22; 
-        color: #E6EDF3; 
-        border-radius: 12px; 
-        border: 1px solid #30363D; 
-        padding: 12px;
-    }
-    .stTextInput > div > div > input:focus {
-        border-color: #2575fc;
-        box-shadow: 0 0 10px rgba(37, 117, 252, 0.2);
-    }
-    
-    /* BUTTON STYLING */
-    .stButton > button, div[data-testid="stFormSubmitButton"] > button {
-        background: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%);
-        color: white; border: none; padding: 16px; font-weight: 700; border-radius: 12px; width: 100%;
-        font-size: 1.1em; letter-spacing: 1px;
-        transition: transform 0.1s ease, box-shadow 0.2s ease;
-    }
-    .stButton > button:hover, div[data-testid="stFormSubmitButton"] > button:hover {
-        transform: scale(1.02);
-        box-shadow: 0 5px 15px rgba(37, 117, 252, 0.4);
-    }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
 
-    /* CUSTOM MUSIC CARD (Spotify Style) */
-    .music-card {
-        background-color: #161B22;
-        border: 1px solid #30363D;
-        border-radius: 12px;
-        padding: 12px;
-        margin-bottom: 20px;
-        transition: all 0.3s ease;
-        height: 100%; /* Ensures equal height in grid */
-        cursor: pointer;
-        position: relative;
-        overflow: hidden;
-    }
-    .music-card:hover {
-        transform: translateY(-5px);
-        border-color: #2575fc;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-    }
-    .card-img {
-        width: 100%;
-        aspect-ratio: 1/1;
-        object-fit: cover;
-        border-radius: 8px;
-        margin-bottom: 12px;
-    }
-    .card-title {
-        font-weight: 700;
-        font-size: 1.1em;
-        color: #fff;
-        margin-bottom: 4px;
-        line-height: 1.2;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    .card-artist {
-        font-size: 0.9em;
-        color: #8b949e;
-        margin-bottom: 8px;
-    }
-    .card-link {
-        text-decoration: none;
-        color: inherit;
-        display: block;
-    }
-    
-    /* UTILITY BOXES */
-    .vision-box { border-left: 4px solid #2575fc; padding: 20px; background: #12151C; border-radius: 0 12px 12px 0; font-size: 1.05em; line-height: 1.6; }
-    .utility-box { background: #161B22; padding: 15px; border-radius: 12px; margin-bottom: 15px; border: 1px solid #30363D; }
-    
-    /* PLAY ALL BUTTON */
-    .play-all-btn {
-        background: #238636;
-        color: white;
-        width: 100%;
-        padding: 18px;
-        border: none;
-        border-radius: 12px;
-        cursor: pointer;
-        font-size: 1.3em;
-        font-weight: 800;
-        text-align: center;
-        text-decoration: none;
-        display: block;
-        box-shadow: 0 4px 15px rgba(35, 134, 54, 0.4);
-        transition: transform 0.2s;
-    }
-    .play-all-btn:hover { transform: scale(1.02); background: #2ea043; }
+.stApp { background-color: #08090C; color: #DDE1EE; font-family: 'Inter', sans-serif; }
 
+h1 {
+    font-family: 'Inter', sans-serif;
+    font-weight: 800;
+    letter-spacing: -3px;
+    font-size: 4.2rem !important;
+    background: linear-gradient(135deg, #ffffff 0%, #7779a0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    padding-bottom: 2px;
+    margin-bottom: 0 !important;
+    line-height: 1 !important;
+}
+
+.tagline { color: #555; font-size: 0.88rem; letter-spacing: 0.8px; margin-bottom: 28px; margin-top: 4px; }
+
+.stTextInput > div > div > input {
+    background-color: #10121A !important;
+    color: #DDE1EE !important;
+    border-radius: 10px !important;
+    border: 1px solid #1E2130 !important;
+    font-size: 0.95rem !important;
+}
+.stTextInput > div > div > input:focus { border-color: #6366f1 !important; }
+
+div[data-testid="stTextInput"] label,
+div[data-testid="stSlider"] label,
+div[data-testid="stToggle"] label { color: #666 !important; font-size: 0.78rem !important; }
+
+.stButton > button {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+    color: white !important; border: none !important;
+    font-weight: 700 !important; border-radius: 10px !important;
+    letter-spacing: 1.2px !important; transition: opacity 0.2s !important;
+}
+.stButton > button:hover { opacity: 0.82 !important; }
+.stButton > button[kind="secondary"] {
+    background: #10121A !important; border: 1px solid #1E2130 !important;
+    color: #666 !important; font-weight: 500 !important; letter-spacing: 0.4px !important;
+}
+.stButton > button[kind="secondary"]:hover { border-color: #6366f1 !important; color: #DDE1EE !important; }
+
+.track-card {
+    background: #10121A; border: 1px solid #181C2A;
+    border-radius: 14px; overflow: hidden;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    margin-bottom: 4px;
+}
+.track-card:hover {
+    transform: translateY(-3px); border-color: #6366f1;
+    box-shadow: 0 8px 32px rgba(99,102,241,0.15);
+}
+.track-img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+.track-img-placeholder {
+    width: 100%; aspect-ratio: 1; background: #181C2A;
+    display: flex; align-items: center; justify-content: center; font-size: 2.5rem;
+}
+.track-info { padding: 12px 14px 10px; }
+.track-num  { color: #2A2E42; font-size: 0.63rem; font-weight: 700; letter-spacing: 1.5px; margin-bottom: 6px; }
+.era-badge  {
+    display: inline-block; background: #181C2A; color: #6366f1;
+    border: 1px solid #252840; border-radius: 20px;
+    font-size: 0.62rem; font-weight: 700; padding: 2px 8px;
+    letter-spacing: 0.8px; margin-bottom: 7px; text-transform: uppercase;
+}
+.track-title  { font-weight: 700; font-size: 0.88rem; line-height: 1.3; color: #DDE1EE; margin-bottom: 2px; }
+.track-artist { color: #555; font-size: 0.78rem; margin-bottom: 7px; }
+.track-reason { color: #3E4260; font-size: 0.7rem; line-height: 1.5; font-style: italic; }
+
+.vision-box {
+    border-left: 3px solid #6366f1; padding: 18px 22px;
+    background: #10121A; border-radius: 0 12px 12px 0;
+    font-size: 0.9rem; line-height: 1.75; color: #8A8FAA; margin-bottom: 20px;
+}
+
+.playlist-header {
+    background: #10121A; border: 1px solid #181C2A;
+    border-radius: 12px; padding: 14px 22px;
+    display: flex; gap: 32px; align-items: center; margin-bottom: 20px;
+}
+.ph-val { font-size: 1.3rem; font-weight: 800; color: #DDE1EE; line-height: 1; }
+.ph-lbl { font-size: 0.6rem; color: #444; letter-spacing: 1.2px; font-weight: 700; text-transform: uppercase; margin-top: 3px; }
+
+.chip-btn .stButton > button {
+    background: #10121A !important; border: 1px solid #1A1D2A !important;
+    color: #555 !important; font-weight: 400 !important;
+    font-size: 0.76rem !important; padding: 5px 10px !important;
+    border-radius: 20px !important; letter-spacing: 0.2px !important;
+}
+.chip-btn .stButton > button:hover { border-color: #6366f1 !important; color: #DDE1EE !important; }
+
+.skipped-notice {
+    background: #120E0A; border: 1px solid #2A1A0A;
+    border-radius: 8px; padding: 9px 14px;
+    font-size: 0.76rem; color: #7A5530; margin-top: 14px;
+}
+
+.utility-box {
+    background: #10121A; padding: 12px 14px; border-radius: 10px;
+    margin-bottom: 8px; border: 1px solid #181C2A;
+    font-size: 0.8rem; line-height: 1.5;
+}
+
+div[data-testid="stHorizontalBlock"] { gap: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR (Original Content) ---
+# ── HELPERS ───────────────────────────────────────────────────────────────────
+def _similarity(a: str, b: str) -> float:
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+def _extract_year(era: str) -> int:
+    m = re.search(r'\d{4}', era)
+    if m:
+        return int(m.group())
+    m = re.search(r'(\d{2,3})s', era)
+    if m:
+        v = int(m.group(1))
+        return (1900 + v) if v < 100 else v
+    return 2000
+
+def search_single_track(track_data: dict, yt: YTMusic) -> dict | None:
+    """Try primary query then fallbacks; return enriched dict or None."""
+    queries = [track_data.get("primary_query", "")] + track_data.get("fallback_queries", [])
+    for q in queries:
+        if not q:
+            continue
+        try:
+            results = yt.search(q, filter="songs")
+            if not results:
+                continue
+            top             = results[0]
+            returned_artist = (top.get("artists") or [{}])[0].get("name", "")
+            returned_title  = top.get("title", "")
+            parts           = q.split("::")
+            expected_artist = parts[0].strip() if len(parts) > 0 else ""
+            expected_title  = parts[1].strip() if len(parts) > 1 else q
+            if (_similarity(returned_artist, expected_artist) >= MATCH_THRESHOLD or
+                    _similarity(returned_title, expected_title)  >= MATCH_THRESHOLD):
+                return {
+                    "title":     returned_title,
+                    "artist":    returned_artist,
+                    "videoId":   top["videoId"],
+                    "thumbnail": (top.get("thumbnails") or [{}])[-1].get("url"),
+                    "era":       track_data.get("era", ""),
+                    "reason":    track_data.get("reason", ""),
+                }
+        except Exception:
+            continue
+    return None
+
+def render_track_card(track: dict, idx: int) -> str:
+    title  = html.escape(track.get("title",  ""))
+    artist = html.escape(track.get("artist", ""))
+    era    = html.escape(track.get("era",    ""))
+    reason = html.escape(track.get("reason", ""))
+    vid    = track["videoId"]
+    thumb  = track.get("thumbnail") or ""
+
+    img_block    = (f'<img class="track-img" src="{thumb}" alt="{title}">'
+                    if thumb else '<div class="track-img-placeholder">♪</div>')
+    era_block    = f'<span class="era-badge">{era}</span><br>' if era    else ""
+    reason_block = f'<p class="track-reason">{reason}</p>'    if reason else ""
+
+    return f"""
+<div class="track-card">
+  <a href="https://music.youtube.com/watch?v={vid}" target="_blank" style="text-decoration:none;">
+    {img_block}
+  </a>
+  <div class="track-info">
+    <div class="track-num">TRACK {idx+1:02d}</div>
+    {era_block}
+    <div class="track-title">{title}</div>
+    <div class="track-artist">{artist}</div>
+    {reason_block}
+  </div>
+</div>"""
+
+# ── SIDEBAR ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### System Capabilities")
-    
+    st.markdown("### System")
     st.markdown("""
-    <div class='utility-box'>
-    <b>1. The Truth Filter (API)</b><br>
-    <small>Chatbots hallucinate songs. We ping the YouTube Music API to verify every track exists and is playable before showing it to you.</small>
-    </div>
-    
-    <div class='utility-box'>
-    <b>2. Zero-Friction Queue</b><br>
-    <small>Don't copy-paste 10 times. We aggregate Video IDs into a single "Play All" link. 10 minutes of manual work becomes 1 click.</small>
-    </div>
+<div class='utility-box'>
+<b>Truth Filter</b><br>
+<small>Every track is cross-referenced against YouTube Music with confidence scoring.
+Hallucinated songs are caught and replaced via fallback queries.</small>
+</div>
+<div class='utility-box'>
+<b>Smart Platter</b><br>
+<small>Forced era mixing — period-accurate anchors + modern philosophical matches
++ bridge tracks connecting the eras.</small>
+</div>
+<div class='utility-box'>
+<b>Feedback Loop</b><br>
+<small>👍/👎 each track, then hit <b>Tweak Mix</b>. The AI adjusts the next
+generation based on your signals.</small>
+</div>
+<div class='utility-box'>
+<b>Zero-Friction Queue</b><br>
+<small>One "Play All" link aggregates every validated Video ID.</small>
+</div>
+""", unsafe_allow_html=True)
 
-    <div class='utility-box'>
-    <b>3. Visual Data Sorting</b><br>
-    <small>Text is slow. Use Album Art to instantly distinguish between a "1930s Original" (grainy cover) and a "2024 Cover" (digital art).</small>
-    </div>
-    """, unsafe_allow_html=True)
+    if st.session_state.memory:
+        st.markdown("---")
+        st.markdown("**Session Memory**")
+        for _m in st.session_state.memory:
+            st.markdown(f"<small style='color:#444'>• {html.escape(_m)}</small>",
+                        unsafe_allow_html=True)
+        if st.button("Clear Memory", type="secondary"):
+            st.session_state.memory = []
+            st.rerun()
 
-# --- MAIN APP ---
+# ── MAIN ──────────────────────────────────────────────────────────────────────
 st.markdown("<h1>VibeCheck</h1>", unsafe_allow_html=True)
-st.write("Generate intelligent, cross-era soundtracks with API validation and auto-queuing.")
+st.markdown(
+    "<p class='tagline'>AI-curated, API-validated soundtracks for any scene, book, or feeling.</p>",
+    unsafe_allow_html=True,
+)
 
-# --- PRO HINTS MODULE (Original Content) ---
-with st.expander("💡 PRO TIP: How to describe complex scenes"):
+# Example prompt chips
+st.markdown("<small style='color:#333;letter-spacing:1px;font-weight:700'>TRY</small>",
+            unsafe_allow_html=True)
+chip_cols = st.columns(len(EXAMPLE_PROMPTS))
+for _i, _prompt in enumerate(EXAMPLE_PROMPTS):
+    with chip_cols[_i]:
+        st.markdown('<div class="chip-btn">', unsafe_allow_html=True)
+        if st.button(_prompt, key=f"chip_{_i}", use_container_width=True):
+            st.session_state.input_text = _prompt
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+st.divider()
+
+col_in, col_opt = st.columns([3, 1])
+with col_in:
+    user_input = st.text_input(
+        "Scene, book title, or feeling:",
+        key="input_text",
+        placeholder="e.g.  'The Age of Reason' by Sartre  –or–  'A tense dinner turning violent'",
+        max_chars=MAX_INPUT_LEN,
+    )
+with col_opt:
+    reading_mode    = st.toggle("Reading Mode", value=False,
+                                help="Instrumental/Ambient only — no lyrics.")
+    num_songs       = st.slider("Tracks", 3, 40, 12)
+    exclude_artists = st.text_input("Exclude artists", placeholder="e.g. Drake, Coldplay",
+                                    help="Comma-separated artists to avoid.")
+
+with st.expander("Pro tips"):
     st.markdown("""
-    * **Length is good:** Feel free to paste a full paragraph. The AI loves detail about lighting, weather, and character emotion.
-    * **Contrast helps:** phrases like *"A violent fight scene with peaceful classical music"* give very specific results.
-    * **Specifics matter:** *"Flickering neon lights in rain"* pulls different songs than just *"Cyberpunk City."*
-    """)
+- **Detail helps:** paste a full paragraph — lighting, weather, emotion all sharpen the mix.
+- **Contrast works:** *"A violent scene with peaceful classical music"* gives very specific results.
+- **Specifics beat vibes:** *"Flickering neon in rain"* pulls different songs than *"Cyberpunk City."*
+- **Feedback loop:** 👍/👎 tracks, then hit **Tweak Mix** for a refined second pass.
+""")
 
-# --- INPUT SECTION ---
-with st.form(key='my_form', clear_on_submit=False):
-    col_in, col_opt = st.columns([3, 1])
-    with col_in:
-        user_input = st.text_input(
-            "Book Title or Scene Description:", 
-            placeholder="e.g. 'The Age of Reason' by Sartre —OR— 'A tense dinner party that turns into a fist fight'"
+btn_col1, btn_col2 = st.columns([2, 1])
+with btn_col1:
+    generate = st.button("CURATE MIX", use_container_width=True)
+with btn_col2:
+    tweak = st.button(
+        "TWEAK MIX", use_container_width=True,
+        disabled=not bool(st.session_state.current_tracks),
+        help="Refine the current mix using your 👍/👎 feedback.",
+        type="secondary",
+    )
+
+# ── GENERATION ────────────────────────────────────────────────────────────────
+if generate or tweak:
+    if not user_input.strip():
+        st.warning("Please describe a scene, book, or feeling.")
+    else:
+        yt = get_ytmusic()
+
+        lessons = "\n".join(f"- {l}" for l in st.session_state.memory[-MAX_MEMORY:])
+
+        liked_titles    = [t["title"] for t in st.session_state.current_tracks
+                           if st.session_state.track_feedback.get(t["videoId"]) == "liked"]
+        disliked_titles = [t["title"] for t in st.session_state.current_tracks
+                           if st.session_state.track_feedback.get(t["videoId"]) == "disliked"]
+
+        feedback_ctx = ""
+        if tweak and (liked_titles or disliked_titles):
+            feedback_ctx = (
+                f"\nUSER FEEDBACK ON LAST MIX:"
+                f"\n  Liked:    {', '.join(liked_titles)    or 'none'}"
+                f"\n  Disliked: {', '.join(disliked_titles) or 'none'}"
+                "\nLean into what was liked; avoid what was disliked."
+            )
+
+        exclude_ctx = (
+            f"\nEXCLUDE THESE ARTISTS (do not include them): {exclude_artists.strip()}"
+            if exclude_artists.strip() else ""
+        )
+        music_type = (
+            "INSTRUMENTAL / AMBIENT / SCORE ONLY — absolutely no lyrics"
+            if reading_mode else
+            "ANY — lyrics allowed when thematically justified"
         )
 
-    with col_opt:
-        reading_mode = st.toggle("📖 Reading Mode", value=False, help="Forces Instrumental/Ambient music only (No Lyrics).")
-        num_songs = st.slider("Tracks", 3, 40, 12)
-        
-    submit_button = st.form_submit_button(label="ACTION: CURATE MIX")
+        system_prompt = (
+            "You are a world-renowned Cinema Music Supervisor celebrated for 'anachronistically perfect' choices.\n"
+            "You think in emotional truth and philosophy first, genre second.\n"
+            "Your mixes feel inevitable in retrospect.\n"
+            "Return only valid JSON — no text outside the JSON object."
+        )
 
-# --- APP LOGIC ---
-if submit_button:
-    if not user_input:
-        st.warning("Please provide a scene or book title.")
-    else:
-        client = Groq(api_key=GROQ_API_KEY)
-        yt = YTMusic()
-        
-        music_type = "INSTRUMENTAL / AMBIENT / SCORE ONLY (NO LYRICS)" if reading_mode else "ANY (Lyrics allowed if thematic)"
-        lessons = "\n".join([f"- {l}" for l in st.session_state.memory])
-        
-        with st.spinner("Synthesizing eras & validating IDs..."):
-            try:
-                # --- PROMPT LOGIC ---
-                prompt = f"""
-                Act as a Cinema Music Supervisor.
-                INPUT: "{user_input}"
-                MODE: {music_type}
-                COUNT: {num_songs} tracks.
-                HISTORY: {lessons}
+        user_prompt = f"""INPUT: "{user_input}"
+MODE: {music_type}
+COUNT: {num_songs} tracks.
+SESSION LESSONS: {lessons or "none yet"}
+{feedback_ctx}
+{exclude_ctx}
 
-                THE RULES OF THE MIX:
-                1. MASTER TONE (CRITICAL): Identify the "World Physics" (e.g., Sally Rooney = Quiet/Intimate). Do NOT break this tone.
-                2. QUALITY CONTROL: Prioritize "Hidden Gems" (Underground but Professional) or "Established Classics". Avoid low-quality trash.
-                3. THE "SMART PLATTER": Mix eras (Old vs New) but keep them emotionally consistent.
-                
-                Output JSON:
-                {{
-                  "vision": "Explain the Master Tone and why these tracks fit.",
-                  "search_queries": ["Artist - Song Title"],
-                  "lesson": "One takeaway about this specific vibe."
-                }}
-                """
-                
-                completion = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[{"role": "user", "content": prompt}],
-                    response_format={"type": "json_object"}
+MIXING RULES:
+1. EMOTIONAL TRUTH is the highest priority — does it *feel* right?
+2. SMART PLATTER — deliberately mix eras:
+   • 1-2 period-accurate anchor tracks (to ground the scene).
+   • 2-3 modern tracks sharing the same philosophy/emotion.
+   • 1-2 bridge tracks (Jazz Noir, Dark Ambient, Post-Rock) connecting the eras.
+3. Per track: provide 2 fallback queries in case the primary is unavailable.
+4. Per track: one sentence explaining the emotional/philosophical connection to the input.
+5. If READING MODE: still mix Classical + Modern Ambient/Drone.
+
+Return EXACTLY this JSON — no extra keys:
+{{
+  "vision": "2-3 sentences: what emotional arc does this playlist trace? What connects the earliest track to the newest?",
+  "tracks": [
+    {{
+      "primary_query":    "Artist Name :: Song Title :: Year",
+      "fallback_queries": ["Artist Name :: Alt Song :: Year", "Artist Name :: Alt Song 2 :: Year"],
+      "reason": "One sentence: why this specific track in this specific mix.",
+      "era":    "e.g. 1960s  or  2019"
+    }}
+  ],
+  "lesson": "One takeaway about this specific vibe for future sessions."
+}}"""
+
+        progress_slot = st.empty()
+        with progress_slot:
+            prog = st.progress(0, text="Synthesizing mix with AI...")
+
+        # LLM call
+        try:
+            completion = get_groq_client().chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": user_prompt},
+                ],
+                response_format={"type": "json_object"},
+            )
+            data = json.loads(completion.choices[0].message.content)
+        except json.JSONDecodeError as e:
+            progress_slot.empty()
+            st.error(f"AI returned malformed JSON — try again. ({e})")
+            st.stop()
+        except Exception as e:
+            progress_slot.empty()
+            st.error(f"AI request failed: {e}")
+            st.stop()
+
+        if "lesson" in data:
+            st.session_state.memory.append(data["lesson"])
+            st.session_state.memory = st.session_state.memory[-MAX_MEMORY:]
+
+        track_data = data.get("tracks", [])
+        prog.progress(0.15, text=f"Validating {len(track_data)} tracks against YouTube Music...")
+
+        # Parallel track search
+        resolved: dict[int, dict] = {}
+        skipped:  list[str]       = []
+
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = {
+                executor.submit(search_single_track, td, yt): i
+                for i, td in enumerate(track_data)
+            }
+            done = 0
+            for future in as_completed(futures):
+                i      = futures[future]
+                result = future.result()
+                done  += 1
+                prog.progress(
+                    0.15 + 0.80 * (done / len(futures)),
+                    text=f"Validated {done}/{len(futures)} tracks...",
                 )
-                data = json.loads(completion.choices[0].message.content)
-                
-                if "lesson" in data:
-                    st.session_state.memory.append(data["lesson"])
+                if result:
+                    resolved[i] = result
+                else:
+                    skipped.append(track_data[i].get("primary_query", f"Track {i+1}"))
 
-                st.markdown(f"### 👁️ Director's Vision")
-                st.markdown(f"<div class='vision-box'>{data.get('vision')}</div>", unsafe_allow_html=True)
-                st.divider()
-                
-                video_ids = []
-                cols = st.columns(4) 
-                
-                for idx, q in enumerate(data.get('search_queries', [])):
-                    # --- SEARCH LOGIC ---
-                    res = yt.search(q)
-                    match = None
-                    
-                    if res:
-                         # --- THE VIP FILTER SYSTEM ---
-                        for r in res[:5]:
-                            # Skip short tracks (< 60s)
-                            duration = r.get('duration_seconds', 0)
-                            if not duration and 'duration' in r: pass 
-                            if duration and duration < 60: continue
-                            
-                            # RULE 1: OFFICIAL SONGS (The VIPs)
-                            if r['resultType'] == 'song':
-                                match = r
-                                break
-                                
-                            # RULE 2: USER VIDEOS (Must have K/M views)
-                            if r['resultType'] == 'video':
-                                views = r.get('views', '')
-                                if 'K' in views or 'M' in views or 'B' in views:
-                                    match = r
-                                    break
-                        
-                        if match:
-                            title = match['title']
-                            artist = match['artists'][0]['name'] if match.get('artists') else "Unknown"
-                            thumb = match['thumbnails'][-1]['url'] if match.get('thumbnails') else "https://via.placeholder.com/300"
-                            video_ids.append(match['videoId'])
-                            
-                            # --- UI UPGRADE: CUSTOM HTML CARD ---
-                            # Instead of st.image/st.write, we render a pure HTML card.
-                            # This ensures perfect alignment and makes the whole card clickable.
-                            with cols[idx % 4]:
-                                st.markdown(f"""
-                                <a href="https://music.youtube.com/watch?v={match['videoId']}" target="_blank" class="card-link">
-                                    <div class="music-card">
-                                        <img src="{thumb}" class="card-img">
-                                        <div class="card-title" title="{title}">{title}</div>
-                                        <div class="card-artist">{artist}</div>
-                                    </div>
-                                </a>
-                                """, unsafe_allow_html=True)
+        progress_slot.empty()
 
-                if video_ids:
-                    url = f"http://www.youtube.com/watch_videos?video_ids={','.join(video_ids)}"
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    st.markdown(f'<a href="{url}" target="_blank" class="play-all-btn">🚀 PLAY FULL SMART MIX ({len(video_ids)} Tracks)</a>', unsafe_allow_html=True)
+        st.session_state.current_tracks  = [resolved[i] for i in sorted(resolved)]
+        st.session_state.current_vision  = data.get("vision", "")
+        st.session_state.skipped_tracks  = skipped
+        st.session_state.track_feedback  = {}
 
-            except Exception as e:
-                st.error(f"Error: {e}")
+# ── RESULTS ───────────────────────────────────────────────────────────────────
+tracks = st.session_state.current_tracks
+vision = st.session_state.current_vision
+
+if tracks:
+    st.markdown("### Director's Vision")
+    st.markdown(
+        f"<div class='vision-box'>{html.escape(vision)}</div>",
+        unsafe_allow_html=True,
+    )
+
+    # Playlist header stats
+    eras      = [t.get("era", "") for t in tracks if t.get("era")]
+    era_years = sorted(set(_extract_year(e) for e in eras)) if eras else []
+    if len(era_years) >= 2:
+        era_display = f"{era_years[0]}s → {era_years[-1]}s"
+    elif era_years:
+        era_display = str(era_years[0])
+    else:
+        era_display = "—"
+
+    st.markdown(f"""
+<div class='playlist-header'>
+  <div><div class='ph-val'>{len(tracks)}</div><div class='ph-lbl'>Tracks</div></div>
+  <div><div class='ph-val' style='font-size:1rem'>{era_display}</div><div class='ph-lbl'>Era Span</div></div>
+  <div><div class='ph-val'>{len(set(era_years))}</div><div class='ph-lbl'>Eras Mixed</div></div>
+  <div><div class='ph-val'>{len(st.session_state.skipped_tracks)}</div><div class='ph-lbl'>Filtered Out</div></div>
+</div>""", unsafe_allow_html=True)
+
+    # Track grid
+    cols = st.columns(4)
+    for idx, track in enumerate(tracks):
+        with cols[idx % 4]:
+            st.markdown(render_track_card(track, idx), unsafe_allow_html=True)
+
+            vid = track["videoId"]
+            fb  = st.session_state.track_feedback.get(vid, "")
+            b1, b2, b3 = st.columns(3)
+
+            if b1.button("✓ Liked" if fb == "liked"    else "👍",
+                         key=f"like_{vid}", use_container_width=True, type="secondary"):
+                st.session_state.track_feedback[vid] = "" if fb == "liked" else "liked"
+                st.rerun()
+            if b2.button("✓ Nope"  if fb == "disliked" else "👎",
+                         key=f"dislike_{vid}", use_container_width=True, type="secondary"):
+                st.session_state.track_feedback[vid] = "" if fb == "disliked" else "disliked"
+                st.rerun()
+            if b3.button("✕", key=f"remove_{vid}", use_container_width=True,
+                         help="Remove this track", type="secondary"):
+                st.session_state.current_tracks = [
+                    t for t in st.session_state.current_tracks if t["videoId"] != vid
+                ]
+                st.rerun()
+
+    # Skipped notice
+    if st.session_state.skipped_tracks:
+        s      = st.session_state.skipped_tracks
+        sample = ", ".join(html.escape(x) for x in s[:4])
+        more   = f" +{len(s)-4} more" if len(s) > 4 else ""
+        st.markdown(
+            f"<div class='skipped-notice'>⚠ {len(s)} track(s) couldn't be verified and were filtered out:"
+            f" {sample}{more}</div>",
+            unsafe_allow_html=True,
+        )
+
+    # Play All
+    video_ids = [t["videoId"] for t in tracks]
+    if video_ids:
+        url = f"https://www.youtube.com/watch_videos?video_ids={','.join(video_ids)}"
+        st.markdown(f"""
+<a href="{url}" target="_blank">
+  <button style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;width:100%;
+    padding:18px;border:none;border-radius:12px;cursor:pointer;font-size:1.05rem;font-weight:700;
+    letter-spacing:2px;margin-top:20px;display:block;">
+    PLAY FULL MIX &nbsp;({len(video_ids)} TRACKS)
+  </button>
+</a>""", unsafe_allow_html=True)
