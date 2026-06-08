@@ -184,16 +184,21 @@ def search_single_track(track_data: dict, yt: YTMusic) -> dict | None:
     for q in queries:
         if not q:
             continue
+        # Parse "Artist :: Title :: Year" components for confidence check
+        parts           = [p.strip() for p in q.split("::")]
+        expected_artist = parts[0] if len(parts) > 0 else ""
+        expected_title  = parts[1] if len(parts) > 1 else q
+        # Clean search query — strip :: separators before sending to YT Music
+        search_q = f"{expected_artist} {expected_title}".strip() if expected_artist else q
         try:
-            results = yt.search(q, filter="songs")
+            results = yt.search(search_q, filter="songs")
+            if not results:
+                results = yt.search(search_q)  # fallback: no filter
             if not results:
                 continue
             top             = results[0]
             returned_artist = (top.get("artists") or [{}])[0].get("name", "")
             returned_title  = top.get("title", "")
-            parts           = q.split("::")
-            expected_artist = parts[0].strip() if len(parts) > 0 else ""
-            expected_title  = parts[1].strip() if len(parts) > 1 else q
             if (_similarity(returned_artist, expected_artist) >= MATCH_THRESHOLD or
                     _similarity(returned_title, expected_title)  >= MATCH_THRESHOLD):
                 return {
@@ -397,8 +402,7 @@ Return EXACTLY this JSON — no extra keys:
 }}"""
 
         progress_slot = st.empty()
-        with progress_slot:
-            prog = st.progress(0, text="Synthesizing mix with AI...")
+        prog = progress_slot.progress(0, text="Synthesizing mix with AI...")
 
         # LLM call
         try:
@@ -452,10 +456,14 @@ Return EXACTLY this JSON — no extra keys:
 
         progress_slot.empty()
 
-        st.session_state.current_tracks  = [resolved[i] for i in sorted(resolved)]
-        st.session_state.current_vision  = data.get("vision", "")
-        st.session_state.skipped_tracks  = skipped
-        st.session_state.track_feedback  = {}
+        if not resolved:
+            st.warning("No tracks could be verified against YouTube Music. Try a different prompt or fewer tracks.")
+        else:
+            st.session_state.current_tracks  = [resolved[i] for i in sorted(resolved)]
+            st.session_state.current_vision  = data.get("vision", "")
+            st.session_state.skipped_tracks  = skipped
+            st.session_state.track_feedback  = {}
+            st.rerun()
 
 # ── RESULTS ───────────────────────────────────────────────────────────────────
 tracks = st.session_state.current_tracks
