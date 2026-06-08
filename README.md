@@ -1,48 +1,70 @@
-# VibeCheck: AI Music Supervisor
+# VibeCheck
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/)
-![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
-![Vibe Coded](https://img.shields.io/badge/Status-Vibe%20Coded-purple)
+**AI-curated, API-validated soundtracks for any scene, book, or feeling.**
 
-**VibeCheck** is an intelligent soundtrack generator that translates abstract concepts (book titles, scene descriptions, emotions) into playable, cross-era playlists.
-
-Unlike standard playlist generators, VibeCheck uses a **two-step verification system**: it employs an LLM (Llama 3 via Groq) for creative curation and the YouTube Music API for sonic validation, ensuring zero hallucinations.
-
----
-
-## Key Features
-
-* **Sub-Second Inference:** Leverages **Groq's LPU** (Linear Processing Unit) architecture for near-instant AI responses.
-* **The Truth Filter:** Solves the "AI Hallucination" problem by cross-referencing every generated song against the **YouTube Music API** to ensure playability.
-* **Context-Aware Curation:** Understands nuance (e.g., *"A 19th-century duel with 2024 techno"*).
-* **Zero-Friction UX:** Auto-aggregates video IDs to generate a single "Play All" deep link, removing manual queueing.
+[![Live Demo](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://vibecheck.streamlit.app)
+![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
+![Groq](https://img.shields.io/badge/LLM-Llama%203.3%2070B%20via%20Groq-orange)
+![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
 
-## Tech Stack
-
-* **Frontend:** Streamlit (Python-based UI).
-* **Intelligence:** Llama 3.3 (70B) via Groq Cloud API.
-* **Data Validation:** `ytmusicapi` (Unofficial YouTube Music API).
-* **Deployment:** Streamlit Community Cloud (CI/CD via GitHub).
+![VibeCheck screenshot](https://raw.githubusercontent.com/YashNirwan/VibeCheck/main/assets/screenshot.png)
 
 ---
 
-## Engineering Journey & Learnings
+## What it does
 
-This project was **"Vibe Coded"**—built with a focus on rapid iteration, user-centric design, and AI-assisted coding to bridge the gap between idea and deployment instantly.
+Give VibeCheck a book title, scene description, or feeling — it generates a cross-era playlist, verifies every track exists on YouTube Music, and gives you a single "Play All" link.
 
-**Key Technical Takeaways:**
-1.  **Mitigating LLM Hallucinations:** I learned that LLMs often invent song titles. I built a validation layer that treats the LLM output as a *suggestion* and the Music API as the *truth*, filtering out non-existent tracks before they reach the UI.
-2.  **Prompt Engineering for Structure:** Designed a JSON-enforced system prompt to ensure the AI returns structured data (Vision, Queries, Lessons) rather than unstructured text, allowing for clean UI rendering.
-3.  **API Latency Management:** Optimized the search loop to handle 40+ API calls asynchronously while providing user feedback via Streamlit spinners.
-4.  **State Management:** Implemented `st.session_state` to give the AI "memory," allowing it to learn from previous generations in the same session.
+The key distinction from other AI playlist tools: **the LLM is treated as a suggestion engine, not a source of truth.** Every generated song title is cross-referenced against the YouTube Music API before it reaches the UI. Hallucinated tracks are caught and replaced via fallback queries, not silently shown.
 
 ---
 
-## How to Run Locally
+## Technical decisions worth noting
 
-1. **Clone the repo**
-   ```bash
-   git clone [https://github.com/YOUR_USERNAME/vibecheck.git](https://github.com/YOUR_USERNAME/vibecheck.git)
-   cd vibecheck
+**1. Hallucination filter with confidence scoring**  
+LLMs routinely invent plausible-sounding song titles. Instead of trusting the model's output directly, I parse each suggested track, search YouTube Music, and compute a string similarity score (SequenceMatcher) between the returned artist/title and the expected values. Tracks below the confidence threshold are retried with fallback queries, then dropped if all fail.
+
+**2. Parallel API validation**  
+The original implementation made 40+ `ytmusicapi` calls sequentially — one per track. Replacing the loop with `ThreadPoolExecutor` (10 workers) reduced validation time by ~8–10x for large mixes, with a live progress bar updating as futures resolve.
+
+**3. Structured LLM output via system/user message separation**  
+The prompt enforces a strict JSON schema (`primary_query`, `fallback_queries`, `reason`, `era` per track) using Groq's `response_format: json_object`. The system message carries the Music Supervisor persona; the user message carries constraints. This separation keeps the model's output consistent across varied inputs.
+
+**4. Session feedback loop**  
+Per-track 👍/👎 signals are stored in `st.session_state` and injected into the next generation prompt as explicit liked/disliked context. The model adjusts its selections without needing a fine-tune or vector store.
+
+---
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| UI | Streamlit |
+| LLM | Llama 3.3 70B via Groq Cloud API |
+| Music validation | `ytmusicapi` (YouTube Music) |
+| Concurrency | `concurrent.futures.ThreadPoolExecutor` |
+| Deployment | Streamlit Community Cloud |
+
+---
+
+## Run locally
+
+```bash
+git clone https://github.com/YashNirwan/VibeCheck.git
+cd VibeCheck
+pip install -r requirements.txt
+```
+
+Add your Groq API key to `.streamlit/secrets.toml`:
+
+```toml
+GROQ_API_KEY = "your_key_here"
+```
+
+```bash
+streamlit run app.py
+```
+
+Get a free Groq API key at [console.groq.com](https://console.groq.com).
