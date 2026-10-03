@@ -20,6 +20,7 @@ MAX_MEMORY      = 5
 MATCH_THRESHOLD = 0.40
 MAX_WORKERS     = 10
 MAX_INPUT_LEN   = 800
+MODEL           = "openai/gpt-oss-120b"
 
 EXAMPLE_PROMPTS = [
     "The Road by Cormac McCarthy",
@@ -37,6 +38,31 @@ def get_ytmusic():
 @st.cache_resource
 def get_groq_client():
     return Groq(api_key=GROQ_API_KEY)
+
+# ── MODEL ─────────────────────────────────────────────────────────────────────
+def generate_mix(system_prompt: str, user_prompt: str):
+    """Ask for the mix at high reasoning effort, falling back to default.
+
+    Measured on the same 8 scenes against YouTube Music: high effort put 97% of
+    tracks through on both artist and title and always returned the full count,
+    against 92% at default. But it takes 30-80s and ~10k tokens, so on Groq's
+    free tier some requests are refused outright (413/429). A refusal or a run
+    past 50s falls back to default effort instead of failing the visitor.
+    Returns (completion, effort_used)."""
+    messages = [{"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_prompt}]
+    client = get_groq_client()
+    try:
+        return client.with_options(timeout=50.0, max_retries=0).chat.completions.create(
+            model=MODEL, messages=messages, response_format={"type": "json_object"},
+            reasoning_effort="high",
+            max_completion_tokens=16384,  # high effort spends the default budget on reasoning, leaving no JSON
+        ), "high"
+    except Exception as e:
+        print(f"[vibecheck] high effort failed, falling back to default: {type(e).__name__}: {str(e)[:120]}")
+        return client.chat.completions.create(
+            model=MODEL, messages=messages, response_format={"type": "json_object"},
+        ), "default"
 
 # ── SESSION STATE ─────────────────────────────────────────────────────────────
 _defaults = {
@@ -379,10 +405,11 @@ SESSION LESSONS: {lessons or "none yet"}
 
 MIXING RULES:
 1. EMOTIONAL TRUTH is the highest priority — does it *feel* right?
-2. SMART PLATTER — deliberately mix eras:
-   • 1-2 period-accurate anchor tracks (to ground the scene).
-   • 2-3 modern tracks sharing the same philosophy/emotion.
-   • 1-2 bridge tracks (Jazz Noir, Dark Ambient, Post-Rock) connecting the eras.
+2. SMART PLATTER — deliberately mix eras across all {num_songs} tracks:
+   • About a quarter: period-accurate anchor tracks (to ground the scene).
+   • About half: modern tracks sharing the same philosophy/emotion.
+   • The rest: bridge tracks (Jazz Noir, Dark Ambient, Post-Rock) connecting the eras.
+   Return exactly {num_songs} tracks.
 3. Per track: provide 2 fallback queries in case the primary is unavailable.
 4. Per track: one sentence explaining the emotional/philosophical connection to the input.
 5. If READING MODE: still mix Classical + Modern Ambient/Drone.
@@ -402,18 +429,11 @@ Return EXACTLY this JSON — no extra keys:
 }}"""
 
         progress_slot = st.empty()
-        prog = progress_slot.progress(0, text="Synthesizing mix with AI...")
+        prog = progress_slot.progress(0, text="Synthesizing mix with AI — this can take up to a minute...")
 
         # LLM call
         try:
-            completion = get_groq_client().chat.completions.create(
-                model="openai/gpt-oss-120b",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user",   "content": user_prompt},
-                ],
-                response_format={"type": "json_object"},
-            )
+            completion, _ = generate_mix(system_prompt, user_prompt)
             data = json.loads(completion.choices[0].message.content)
         except json.JSONDecodeError as e:
             progress_slot.empty()

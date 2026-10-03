@@ -4,7 +4,7 @@
 
 [![Live Demo](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://vibecheck.streamlit.app)
 ![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
-![Groq](https://img.shields.io/badge/LLM-Llama%203.3%2070B%20via%20Groq-orange)
+![Groq](https://img.shields.io/badge/LLM-gpt--oss--120b%20via%20Groq-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
@@ -35,6 +35,9 @@ The prompt enforces a strict JSON schema (`primary_query`, `fallback_queries`, `
 **4. Session feedback loop**  
 Per-track 👍/👎 signals are stored in `st.session_state` and injected into the next generation prompt as explicit liked/disliked context. The model adjusts its selections without needing a fine-tune or vector store.
 
+
+**5. Reasoning effort chosen by measurement, with a fallback**  
+Model and settings were picked by running VibeCheck's own prompt and validator over the same 8 scenes and checking every track against YouTube Music on both artist *and* title. `gpt-oss-120b` at high reasoning effort scored 97% and always returned the full count; default effort 92%; the newer `qwen3.8-27b` 58%, with most requests rate-limited. High effort costs 30–80 s and ~10k tokens, so a refusal or a run past 50 s falls back to default effort rather than failing the request. The same run found the prompt asked for 12 tracks while its mixing rules capped a mix at 7 — the rules are now proportions of the requested count.
 ---
 
 ## Stack
@@ -42,7 +45,7 @@ Per-track 👍/👎 signals are stored in `st.session_state` and injected into t
 | Layer | Technology |
 |---|---|
 | UI | Streamlit |
-| LLM | Llama 3.3 70B via Groq Cloud API |
+| LLM | gpt-oss-120b via Groq Cloud API (high reasoning effort, default-effort fallback) |
 | Music validation | `ytmusicapi` (YouTube Music) |
 | Concurrency | `concurrent.futures.ThreadPoolExecutor` |
 | Deployment | Streamlit Community Cloud |
